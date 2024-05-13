@@ -100,6 +100,7 @@ type Raft struct {
 	currentTerm int
 	votedFor    *int
 	log         []LogEntry
+	voteCount   int
 
 	commitIndex int
 	lastApplied int
@@ -194,17 +195,21 @@ func (rf *Raft) resetTimer(id int) {
 
 // example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	reply.Term = rf.currentTerm
-	if rf.safeRead("currentTerm").(int) >= args.Term {
+	if rf.currentTerm > args.Term {
 		reply.VoteGranted = false
+		reply.Term = rf.currentTerm
 		fmt.Printf("Server %d did not give the vote to server %d\n", rf.me, args.CandidateId)
+		return
 	} else {
 		if rf.votedFor == nil || *rf.votedFor == args.CandidateId {
 			fmt.Printf("Server %d granted the vote to server %d\n", rf.me, args.CandidateId)
 			reply.VoteGranted = true
-			rf.safeUpdate("votedFor", &args.CandidateId)
-			rf.safeUpdate("currentTerm", args.Term)
-			rf.heartbeatCh <- AppendEntriesRequest{}
+			rf.votedFor = &args.CandidateId
+			rf.currentTerm = args.Term
+			rf.heartbeatCh <- AppendEntriesRequest{} // count this as a heartbeat
 			// rf.safeUpdate("lastResetTime", time.Now())
 			// Persist state change
 			rf.persist()
@@ -216,14 +221,33 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesRequest, reply *AppendEntriesReply) {
-
-	if args.Term >= rf.currentTerm {
-		rf.safeUpdate("currentTerm", args.Term)
-		rf.safeUpdate("state", Follower)
-		rf.safeUpdate("votedFor", nil)
-		rf.persist()
+	rf.mu.Lock()
+	currTerm := rf.currentTerm
+	rf.mu.Unlock()
+	if args.Term < currTerm {
+		rf.mu.Lock()
+		reply.Term = currTerm
+		reply.Success = false
+		rf.mu.Unlock()
+		return
 	}
-	rf.resetTimer(args.LeaderId)
+	rf.mu.Lock()
+	currTerm = rf.currentTerm
+	rf.mu.Unlock()
+	if args.Term > currTerm {
+		fmt.Printf("Server %d received a heartbeat with a higher term than ours\n", rf.me)
+		rf.mu.Lock()
+		rf.currentTerm = args.Term
+		rf.state = Follower
+		rf.votedFor = nil
+
+		// rf.safeUpdate("currentTerm", args.Term)
+		// rf.safeUpdate("state", Follower)
+		// rf.safeUpdate("votedFor", nil)
+		rf.persist()
+		rf.mu.Unlock()
+	}
+	// rf.resetTimer(args.LeaderId)
 
 	rf.heartbeatCh <- *args
 	// 1. Reply false if term < currentTerm (§5.1)
@@ -322,12 +346,41 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesRequest, reply 
 	return ok
 }
 
+func (rf *Raft) clearChannels() {
+	rf.heartbeatCh = make(chan AppendEntriesRequest)
+	rf.applyCh = make(chan ApplyMsg)
+	rf.voteCh = make(chan RequestVoteReply)
+	rf.electionStartCh = make(chan struct{}, 1)
+}
+
+func (rf *Raft) switchToFollower(term int) {
+	rf.state = Follower
+	rf.currentTerm = term
+	rf.votedFor = nil
+
+}
+
+func (rf *Raft) switchToCandidate() {
+	rf.state = Candidate
+	rf.currentTerm++
+	rf.votedFor = &rf.me
+	rf.electionStartCh <- struct{}{}
+
+}
+
+func (rf *Raft) switchToLeader() {
+	rf.state = Leader
+	rf.nextIndex = make([]int, len(rf.peers))
+	rf.matchIndex = make([]int, len(rf.peers))
+
+}
+
 // the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
 // server isn't the leader, returns false. otherwise start the
 // agreement and return immediately. there is no guarantee that this
 // command will ever be committed to the Raft log, since the leader
-// may fail or lose an election. even if the Raft instance has been killed,
+// may fail or lose an election. even if thfse Raft instance has been killed,
 // this function should return gracefully.
 //
 // the first return value is the index that the command will appear at
@@ -368,6 +421,9 @@ func (rf *Raft) safeRead(name string) interface{} {
 			fmt.Printf("Read votedFor: nil\n")
 			return nil
 		}
+	case "voteCount":
+		fmt.Printf("Read server %d voteCount: %d\n", rf.me, rf.voteCount)
+		return rf.voteCount
 	case "state":
 		fmt.Printf("Read server %d state: %s\n", rf.me, rf.state.String())
 		return rf.state
@@ -396,6 +452,7 @@ func (rf *Raft) safeRead(name string) interface{} {
 		fmt.Printf("safeRead: unknown field name %s\n", name)
 		return nil
 	}
+
 }
 
 func (rf *Raft) safeUpdate(name string, value interface{}) {
@@ -418,6 +475,13 @@ func (rf *Raft) safeUpdate(name string, value interface{}) {
 			fmt.Printf("Updated votedFor to nil\n")
 		} else {
 			fmt.Printf("safeUpdate: type assertion failed for votedFor\n")
+		}
+	case "voteCount":
+		if v, ok := value.(int); ok {
+			rf.voteCount = v
+			fmt.Printf("Server %d Updated votedFor to %d\n", rf.me, v)
+		} else {
+			fmt.Printf("safeUpdate: type assertion failed for votedCount\n")
 		}
 	case "state":
 		if v, ok := value.(RaftState); ok {
@@ -479,11 +543,13 @@ func (rf *Raft) safeUpdate(name string, value interface{}) {
 		fmt.Printf("safeUpdate: unknown field name %s\n", name)
 	}
 }
+
 func (rf *Raft) sendHeartbeat() {
 	for i := range rf.peers {
 		if i != rf.me {
 			go func(server int) {
 				var reply AppendEntriesReply
+				rf.mu.Lock()
 				args := AppendEntriesRequest{
 					Term:         rf.currentTerm,
 					LeaderId:     rf.me,
@@ -492,15 +558,23 @@ func (rf *Raft) sendHeartbeat() {
 					Entries:      nil, // heartbeat contains no entries
 					LeaderCommit: rf.commitIndex,
 				}
+				rf.mu.Unlock()
 				fmt.Printf("Server %d sent heartbeat to Server %d\n", rf.me, server)
 				if rf.sendAppendEntries(server, &args, &reply) {
 					rf.mu.Lock()
-					defer rf.mu.Unlock()
-					if reply.Term > rf.currentTerm {
+					currT := rf.currentTerm
+					rf.mu.Unlock()
+					if reply.Term > currT {
+						rf.mu.Lock()
 						rf.currentTerm = reply.Term
 						rf.state = Follower
 						rf.votedFor = nil
+
+						// rf.safeUpdate("currentTerm", reply.Term)
+						// rf.safeUpdate("state", Follower)
+						// rf.safeUpdate("votedFor", nil)
 						rf.persist()
+						rf.mu.Unlock()
 					}
 				}
 			}(i)
@@ -515,25 +589,18 @@ func (rf *Raft) run() {
 
 		// elapsedTime := currentTime.Sub(rf.lastResetTime)
 		// fmt.Printf("Elapsed time: %v, Reset timer: %v\n", elapsedTime, rf.electionTimeoutDuration)
-		switch rf.state {
+		rf.mu.Lock()
+		state := rf.state
+		rf.mu.Unlock()
+		switch state {
 		case Follower:
-			rf.safeUpdate("votedFor", nil)
 			select {
 			case <-rf.heartbeatCh:
 				fmt.Printf("Server %d received a heartbeat\n", rf.me)
 			case <-time.After(rf.electionTimeoutDuration):
-				lastResetTimeMillis := rf.lastResetTime.UnixNano() / int64(time.Millisecond)
-				rf.safeUpdate("state", Candidate)
-				rf.safeUpdate("lastResetTime", lastResetTimeMillis)
-				rf.electionStartCh <- struct{}{}
-				currentTerm := rf.safeRead("currentTerm")
-				currentTerm, ok := currentTerm.(int)
-				if !ok {
-					fmt.Printf("Failed to convert currentTerm to int\n")
-					return
-				}
-				nextTerm := currentTerm.(int) + 1
-				rf.safeUpdate("currentTerm", nextTerm)
+				rf.mu.Lock()
+				rf.switchToCandidate()
+				rf.mu.Unlock()
 			}
 			// rf.mu.Unlock()
 			// // fmt.Printf("Server %d: follower\n", rf.me)
@@ -548,23 +615,14 @@ func (rf *Raft) run() {
 			// rf.timerMu.Unlock()
 			// rf.mu.Unlock()
 		case Candidate:
-			currentTime := time.Now()
-			rf.safeUpdate("votedFor", &rf.me)
-			rf.safeUpdate("lastResetTime", currentTime)
-			termValue := rf.safeRead("currentTerm")
-			term, ok := termValue.(int)
-			if !ok {
-				fmt.Printf("Failed to convert term to int\n")
-				return
-			}
+			rf.mu.Lock()
 			args := RequestVoteArgs{
-				Term:         term,
+				Term:         rf.currentTerm,
 				CandidateId:  rf.me,
 				LastLogIndex: -1,
 				LastLogTerm:  -1,
 			}
-
-			votesReceived := 1 // We start with 1 because a candidate votes for itself
+			rf.mu.Unlock()
 
 			select {
 			case <-rf.electionStartCh:
@@ -576,45 +634,45 @@ func (rf *Raft) run() {
 							var reply RequestVoteReply
 							if rf.sendRequestVote(server, &args, &reply) {
 								if reply.VoteGranted {
+									fmt.Printf("vote granted\n")
 									rf.voteCh <- reply
+									fmt.Printf("sent vote to channel\n")
 								}
 							}
 						}(i)
 					}
 				}
 			case reply := <-rf.voteCh:
+				rf.mu.Lock()
+				fmt.Printf("Processing vote\n")
+				if rf.state != Candidate {
+					fmt.Print("Race condition, we reset to a different state")
+					return
+				}
+
 				if reply.Term > rf.currentTerm {
 					fmt.Printf("Server %d found higher term %d in reply\n", rf.me, reply.Term)
-					rf.safeUpdate("currentTerm", reply.Term)
-					rf.safeUpdate("state", Follower)
-					rf.safeUpdate("votedFor", nil)
+					rf.switchToFollower(rf.currentTerm)
 					rf.persist()
 				} else if reply.VoteGranted && rf.state == Candidate {
-					votesReceived++
+					rf.voteCount++
 					fmt.Printf("Server %d received vote\n", rf.me)
-					if votesReceived*2 > len(rf.peers) {
-						fmt.Printf("Server %d has become the leader with %d votes\n", rf.me, votesReceived)
-						rf.safeUpdate("state", Leader)
-						// Reinitialize nextIndex and matchIndex for all followers
-						rf.nextIndex = make([]int, len(rf.peers))
-						rf.matchIndex = make([]int, len(rf.peers))
-						for i := range rf.nextIndex {
-							rf.nextIndex[i] = len(rf.log)
-						}
-
-						// Send initial empty AppendEntries RPCs (heartbeat) to each server
-						// (code for sending heartbeats is not shown here)
+					if rf.voteCount*2 > len(rf.peers) {
+						fmt.Printf("Server %d has become the leader with %d votes\n", rf.me, rf.voteCount)
+						rf.switchToLeader()
 						go rf.sendHeartbeat()
-						fmt.Print("ADSGJOPASDGHI")
 					}
 				}
+				rf.mu.Unlock()
 			case <-time.After(rf.electionTimeoutDuration):
-				fmt.Printf("Server %d election timeout, failed to win the election with %d votes\n", rf.me, votesReceived)
+				fmt.Printf("Server %d election timeout, failed to win the election with %d votes\n", rf.me, rf.voteCount)
 				rf.safeUpdate("state", Follower)
 				rf.safeUpdate("votedFor", nil)
+				rf.mu.Lock()
+				rf.electionTimeoutDuration = time.Duration(150+rand.Intn(151)) * time.Millisecond
+				rf.mu.Unlock()
 			}
 
-			// rf.mu.Unlock()
 		case Leader:
 			fmt.Printf("Server %d is the leader\n", rf.me)
 			select {
