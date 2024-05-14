@@ -17,7 +17,6 @@ package raft
 //
 
 import (
-	"fmt"
 	"math/rand"
 	"raft/labrpc"
 	"sync"
@@ -201,11 +200,11 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if rf.currentTerm > args.Term {
 		reply.VoteGranted = false
 		reply.Term = rf.currentTerm
-		fmt.Printf("Server %d did not give the vote to server %d\n", rf.me, args.CandidateId)
+		// fmt.Printf("Server %d did not give the vote to server %d\n", rf.me, args.CandidateId)
 		return
 	} else {
 		if rf.votedFor == nil || *rf.votedFor == args.CandidateId {
-			fmt.Printf("Server %d granted the vote to server %d\n", rf.me, args.CandidateId)
+			// fmt.Printf("Server %d granted the vote to server %d\n", rf.me, args.CandidateId)
 			reply.VoteGranted = true
 			rf.votedFor = &args.CandidateId
 			rf.currentTerm = args.Term
@@ -235,7 +234,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesRequest, reply *AppendEntriesRe
 	currTerm = rf.currentTerm
 	rf.mu.Unlock()
 	if args.Term > currTerm {
-		fmt.Printf("Server %d received a heartbeat with a higher term than ours\n", rf.me)
+		// fmt.Printf("Server %d received a heartbeat with a higher term than ours\n", rf.me)
 		rf.mu.Lock()
 		rf.currentTerm = args.Term
 		rf.state = Follower
@@ -408,48 +407,48 @@ func (rf *Raft) Kill() {
 func (rf *Raft) safeRead(name string) interface{} {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	fmt.Printf("Server %d ", rf.me)
+	// fmt.Printf("Server %d ", rf.me)
 	switch name {
 	case "currentTerm":
-		fmt.Printf("Read currentTerm: %d\n", rf.currentTerm)
+		// fmt.Printf("Read currentTerm: %d\n", rf.currentTerm)
 		return rf.currentTerm
 	case "votedFor":
 		if rf.votedFor != nil {
-			fmt.Printf("Read votedFor: %d\n", *rf.votedFor)
+			// fmt.Printf("Read votedFor: %d\n", *rf.votedFor)
 			return *rf.votedFor
 		} else {
-			fmt.Printf("Read votedFor: nil\n")
+			// fmt.Printf("Read votedFor: nil\n")
 			return nil
 		}
 	case "voteCount":
-		fmt.Printf("Read server %d voteCount: %d\n", rf.me, rf.voteCount)
+		// fmt.Printf("Read server %d voteCount: %d\n", rf.me, rf.voteCount)
 		return rf.voteCount
 	case "state":
-		fmt.Printf("Read server %d state: %s\n", rf.me, rf.state.String())
+		// fmt.Printf("Read server %d state: %s\n", rf.me, rf.state.String())
 		return rf.state
 	case "log":
-		fmt.Printf("Read log: %+v\n", rf.log)
+		// fmt.Printf("Read log: %+v\n", rf.log)
 		return rf.log
 	case "commitIndex":
-		fmt.Printf("Read commitIndex: %d\n", rf.commitIndex)
+		// fmt.Printf("Read commitIndex: %d\n", rf.commitIndex)
 		return rf.commitIndex
 	case "lastApplied":
-		fmt.Printf("Read lastApplied: %d\n", rf.lastApplied)
+		// fmt.Printf("Read lastApplied: %d\n", rf.lastApplied)
 		return rf.lastApplied
 	case "nextIndex":
-		fmt.Printf("Read nextIndex: %+v\n", rf.nextIndex)
+		// fmt.Printf("Read nextIndex: %+v\n", rf.nextIndex)
 		return rf.nextIndex
 	case "matchIndex":
-		fmt.Printf("Read matchIndex: %+v\n", rf.matchIndex)
+		// fmt.Printf("Read matchIndex: %+v\n", rf.matchIndex)
 		return rf.matchIndex
 	case "electionTimeoutDuration":
-		fmt.Printf("Read electionTimeoutDuration: %v\n", rf.electionTimeoutDuration)
+		// fmt.Printf("Read electionTimeoutDuration: %v\n", rf.electionTimeoutDuration)
 		return rf.electionTimeoutDuration
 	case "lastResetTime":
-		fmt.Printf("Read lastResetTime: %v\n", rf.lastResetTime)
+		// fmt.Printf("Read lastResetTime: %v\n", rf.lastResetTime)
 		return rf.lastResetTime
 	default:
-		fmt.Printf("safeRead: unknown field name %s\n", name)
+		// fmt.Printf("safeRead: unknown field name %s\n", name)
 		return nil
 	}
 
@@ -462,85 +461,85 @@ func (rf *Raft) safeUpdate(name string, value interface{}) {
 	case "currentTerm":
 		if v, ok := value.(int); ok {
 			rf.currentTerm = v
-			fmt.Printf("Server %d Updated currentTerm to %d\n", rf.me, v)
+			// fmt.Printf("Server %d Updated currentTerm to %d\n", rf.me, v)
 		} else {
-			fmt.Printf("safeUpdate: type assertion failed for currentTerm\n")
+			// fmt.Printf("safeUpdate: type assertion failed for currentTerm\n")
 		}
 	case "votedFor":
 		if v, ok := value.(*int); ok {
 			rf.votedFor = v
-			fmt.Printf("Server %d Updated votedFor to %d\n", rf.me, v)
+			// fmt.Printf("Server %d Updated votedFor to %d\n", rf.me, v)
 		} else if value == nil {
 			rf.votedFor = nil
-			fmt.Printf("Updated votedFor to nil\n")
+			// fmt.Printf("Updated votedFor to nil\n")
 		} else {
-			fmt.Printf("safeUpdate: type assertion failed for votedFor\n")
+			// fmt.Printf("safeUpdate: type assertion failed for votedFor\n")
 		}
 	case "voteCount":
 		if v, ok := value.(int); ok {
 			rf.voteCount = v
-			fmt.Printf("Server %d Updated votedFor to %d\n", rf.me, v)
+			// fmt.Printf("Server %d Updated votedFor to %d\n", rf.me, v)
 		} else {
-			fmt.Printf("safeUpdate: type assertion failed for votedCount\n")
+			// fmt.Printf("safeUpdate: type assertion failed for votedCount\n")
 		}
 	case "state":
 		if v, ok := value.(RaftState); ok {
 			rf.state = v
-			fmt.Printf("Server %d Updated state to %v\n", rf.me, v)
+			// fmt.Printf("Server %d Updated state to %v\n", rf.me, v)
 		} else {
-			fmt.Printf("safeUpdate: type assertion failed for state\n")
+			// fmt.Printf("safeUpdate: type assertion failed for state\n")
 		}
 	case "log":
 		if v, ok := value.([]LogEntry); ok {
 			rf.log = v
-			fmt.Printf("Updated log to %+v\n", v)
+			// fmt.Printf("Updated log to %+v\n", v)
 		} else {
-			fmt.Printf("safeUpdate: type assertion failed for log\n")
+			// fmt.Printf("safeUpdate: type assertion failed for log\n")
 		}
 	case "commitIndex":
 		if v, ok := value.(int); ok {
 			rf.commitIndex = v
-			fmt.Printf("Updated commitIndex to %d\n", v)
+			// fmt.Printf("Updated commitIndex to %d\n", v)
 		} else {
-			fmt.Printf("safeUpdate: type assertion failed for commitIndex\n")
+			// fmt.Printf("safeUpdate: type assertion failed for commitIndex\n")
 		}
 	case "lastApplied":
 		if v, ok := value.(int); ok {
 			rf.lastApplied = v
-			fmt.Printf("Updated lastApplied to %d\n", v)
+			// fmt.Printf("Updated lastApplied to %d\n", v)
 		} else {
-			fmt.Printf("safeUpdate: type assertion failed for lastApplied\n")
+			// fmt.Printf("safeUpdate: type assertion failed for lastApplied\n")
 		}
 	case "nextIndex":
 		if v, ok := value.([]int); ok {
 			rf.nextIndex = v
-			fmt.Printf("Updated nextIndex to %+v\n", v)
+			// fmt.Printf("Updated nextIndex to %+v\n", v)
 		} else {
-			fmt.Printf("safeUpdate: type assertion failed for nextIndex\n")
+			// fmt.Printf("safeUpdate: type assertion failed for nextIndex\n")
 		}
 	case "matchIndex":
 		if v, ok := value.([]int); ok {
 			rf.matchIndex = v
-			fmt.Printf("Updated matchIndex to %+v\n", v)
+			// fmt.Printf("Updated matchIndex to %+v\n", v)
 		} else {
-			fmt.Printf("safeUpdate: type assertion failed for matchIndex\n")
+			// fmt.Printf("safeUpdate: type assertion failed for matchIndex\n")
 		}
 	case "electionTimeoutDuration":
 		if v, ok := value.(time.Duration); ok {
 			rf.electionTimeoutDuration = v
-			fmt.Printf("Updated electionTimeoutDuration to %v\n", v)
+			// fmt.Printf("Updated electionTimeoutDuration to %v\n", v)
 		} else {
-			fmt.Printf("safeUpdate: type assertion failed for electionTimeoutDuration\n")
+			// fmt.Printf("safeUpdate: type assertion failed for electionTimeoutDuration\n")
 		}
 	case "lastResetTime":
 		if v, ok := value.(time.Time); ok {
 			rf.lastResetTime = v
-			fmt.Printf("Updated lastResetTime to %v\n", v)
+			// fmt.Printf("Updated lastResetTime to %v\n", v)
 		} else {
-			fmt.Printf("safeUpdate: type assertion failed for lastResetTime\n")
+			// fmt.Printf("safeUpdate: type assertion failed for lastResetTime\n")
 		}
 	default:
-		fmt.Printf("safeUpdate: unknown field name %s\n", name)
+		// fmt.Printf("safeUpdate: unknown field name %s\n", name)
 	}
 }
 
@@ -559,7 +558,7 @@ func (rf *Raft) sendHeartbeat() {
 					LeaderCommit: rf.commitIndex,
 				}
 				rf.mu.Unlock()
-				fmt.Printf("Server %d sent heartbeat to Server %d\n", rf.me, server)
+				// fmt.Printf("Server %d sent heartbeat to Server %d\n", rf.me, server)
 				if rf.sendAppendEntries(server, &args, &reply) {
 					rf.mu.Lock()
 					currT := rf.currentTerm
@@ -596,7 +595,7 @@ func (rf *Raft) run() {
 		case Follower:
 			select {
 			case <-rf.heartbeatCh:
-				fmt.Printf("Server %d received a heartbeat\n", rf.me)
+				// fmt.Printf("Server %d received a heartbeat\n", rf.me)
 			case <-time.After(rf.electionTimeoutDuration):
 				rf.mu.Lock()
 				rf.switchToCandidate()
@@ -626,17 +625,17 @@ func (rf *Raft) run() {
 
 			select {
 			case <-rf.electionStartCh:
-				fmt.Printf("Server %d is starting an election\n", rf.me)
+				// fmt.Printf("Server %d is starting an election\n", rf.me)
 				for i := range rf.peers {
 					if i != rf.me {
 						go func(server int) {
-							fmt.Printf("Server %d is sending a vote request to server %d\n", rf.me, server)
+							// fmt.Printf("Server %d is sending a vote request to server %d\n", rf.me, server)
 							var reply RequestVoteReply
 							if rf.sendRequestVote(server, &args, &reply) {
 								if reply.VoteGranted {
-									fmt.Printf("vote granted\n")
+									// fmt.Printf("vote granted\n")
 									rf.voteCh <- reply
-									fmt.Printf("sent vote to channel\n")
+									// fmt.Printf("sent vote to channel\n")
 								}
 							}
 						}(i)
@@ -644,28 +643,28 @@ func (rf *Raft) run() {
 				}
 			case reply := <-rf.voteCh:
 				rf.mu.Lock()
-				fmt.Printf("Processing vote\n")
+				// fmt.Printf("Processing vote\n")
 				if rf.state != Candidate {
-					fmt.Print("Race condition, we reset to a different state")
+					// fmt.Print("Race condition, we reset to a different state")
 					return
 				}
 
 				if reply.Term > rf.currentTerm {
-					fmt.Printf("Server %d found higher term %d in reply\n", rf.me, reply.Term)
+					// fmt.Printf("Server %d found higher term %d in reply\n", rf.me, reply.Term)
 					rf.switchToFollower(rf.currentTerm)
 					rf.persist()
 				} else if reply.VoteGranted && rf.state == Candidate {
 					rf.voteCount++
-					fmt.Printf("Server %d received vote\n", rf.me)
+					// fmt.Printf("Server %d received vote\n", rf.me)
 					if rf.voteCount*2 > len(rf.peers) {
-						fmt.Printf("Server %d has become the leader with %d votes\n", rf.me, rf.voteCount)
+						// fmt.Printf("Server %d has become the leader with %d votes\n", rf.me, rf.voteCount)
 						rf.switchToLeader()
 						go rf.sendHeartbeat()
 					}
 				}
 				rf.mu.Unlock()
 			case <-time.After(rf.electionTimeoutDuration):
-				fmt.Printf("Server %d election timeout, failed to win the election with %d votes\n", rf.me, rf.voteCount)
+				// fmt.Printf("Server %d election timeout, failed to win the election with %d votes\n", rf.me, rf.voteCount)
 				rf.safeUpdate("state", Follower)
 				rf.safeUpdate("votedFor", nil)
 				rf.mu.Lock()
@@ -674,7 +673,7 @@ func (rf *Raft) run() {
 			}
 
 		case Leader:
-			fmt.Printf("Server %d is the leader\n", rf.me)
+			// fmt.Printf("Server %d is the leader\n", rf.me)
 			select {
 			case <-time.After(100 * time.Millisecond):
 				go rf.sendHeartbeat()
